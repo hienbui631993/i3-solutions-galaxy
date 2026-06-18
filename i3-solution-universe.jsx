@@ -83,7 +83,18 @@ export default function App() {
   const [cardExpanded, setCardExpanded] = useState(false);
   const [ppTooltip, setPpTooltip] = useState(null); // {text, x, y}
   useEffect(() => { setCardExpanded(false); }, [selected]);
-  const [editPain, setEditPain] = useState(null);
+  const [editPain, setEditPain] = useState(() => {
+    try { const id = typeof localStorage !== "undefined" ? localStorage.getItem("i3_last_edit_pain_v1") : null; return id && NODE_BY_ID[id] && NODE_BY_ID[id].type === "pain" ? id : null; } catch (e) { return null; }
+  });
+  const editSelRef = useRef(null);
+  // remember the last pain edited so reopening the editor resumes there (survives reload)
+  useEffect(() => { try { if (typeof localStorage !== "undefined" && editPain) localStorage.setItem("i3_last_edit_pain_v1", editPain); } catch (e) {} }, [editPain]);
+  // when the editor (re)opens, scroll the selected pain back into view in the left list
+  useEffect(() => {
+    if (!editorOn || !editPain) return;
+    const id = requestAnimationFrame(() => { if (editSelRef.current) editSelRef.current.scrollIntoView({ block: "center" }); });
+    return () => cancelAnimationFrame(id);
+  }, [editorOn]);
   const [editSearch, setEditSearch] = useState("");
   const [editVer, setEditVer] = useState(0);
   const [saveState, setSaveState] = useState("");
@@ -1021,7 +1032,7 @@ export default function App() {
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 12px" }}>
                   {list.map((p) => { const sel = editPain === p.id, n = p.sols.length; return (
-                    <div key={p.id} onClick={() => setEditPain(p.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, cursor: "pointer", background: sel ? "rgba(255,93,108,0.16)" : "transparent", border: sel ? "1px solid rgba(255,93,108,0.5)" : "1px solid transparent", marginBottom: 3 }}>
+                    <div key={p.id} ref={sel ? editSelRef : null} onClick={() => setEditPain(p.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, cursor: "pointer", background: sel ? "rgba(255,93,108,0.16)" : "transparent", border: sel ? "1px solid rgba(255,93,108,0.5)" : "1px solid transparent", marginBottom: 3 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12, color: sel ? "#ffd5d8" : "#cdd9ef", lineHeight: 1.3 }}>{p.label}</div>
                         {(p.verts || []).length > 0 && <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>{(p.verts || []).map((vid) => { const vv = VERTICALS.find((v) => v.id === vid); return vv ? (<span key={vid} style={{ width: 7, height: 7, borderRadius: 7, background: vv.color, display: "inline-block" }} title={vv.label} />) : null; })}</div>}
