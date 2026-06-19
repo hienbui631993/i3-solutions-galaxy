@@ -54,6 +54,11 @@ export default function App() {
   const [hoverPos, setHoverPos] = useState(null);
   const [active, setActive] = useState(null);
   const [vSel, setVSel] = useState(null);
+  // layered filters: stack multiple focus-area + vertical tags, combined with AND/OR
+  const [fVerts, setFVerts] = useState([]);
+  const [fPillars, setFPillars] = useState([]);
+  const [fMode, setFMode] = useState("and");
+  const layersRef = useRef({ verts: [], pillars: [], mode: "and" });
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState(null);
   const [thinking, setThinking] = useState(false);
@@ -485,13 +490,13 @@ export default function App() {
     if (gameOn) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const id = hitTest(e.clientX - rect.left, e.clientY - rect.top);
-    if (id === "core") { setSelected(null); setActive(null); setVSel(null); setAnswer(null); setShowAll((v) => !v); }
-    else if (id) { setSelected(id); setActive(null); setVSel(null); setAnswer(null); setShowAll(false); } else { setSelected(null); }
+    if (id === "core") { clearLayers(); setSelected(null); setActive(null); setVSel(null); setAnswer(null); setShowAll((v) => !v); }
+    else if (id) { clearLayers(); setSelected(id); setActive(null); setVSel(null); setAnswer(null); setShowAll(false); } else { setSelected(null); }
   };
 
   const sampleN = (arr, n) => { const a = [...arr], out = []; n = Math.max(0, Math.min(n, a.length)); for (let i = 0; i < n; i++) out.push(a.splice(Math.floor(Math.random() * a.length), 1)[0]); return out; };
   const randomize = () => {
-    setVSel(null); setSelected(null); setAnswer(null);
+    clearLayers(); setVSel(null); setSelected(null); setAnswer(null);
     let np = rnd.pain ? 1 + Math.floor(Math.random() * 4) : nPain;
     let ns = rnd.sol ? Math.floor(Math.random() * 4) : nSol;
     let nf = rnd.focus ? Math.floor(Math.random() * 3) : nFocus;
@@ -511,9 +516,36 @@ export default function App() {
     while (countType("pillar") < nf && availP.length) { const p = availP.splice(Math.floor(Math.random() * availP.length), 1)[0]; ids.add(p.id); }
     setActive(ids.size > 1 ? ids : null);
   };
-  const filterPillar = (pid) => { setVSel(null); setActive(pillarSet(pid)); setSelected(pid); setAnswer(null); };
-  const filterVertical = (vid) => { setVSel(vid); setActive(verticalSet(vid)); setSelected(null); setAnswer(null); };
-  const reset = () => { setActive(null); setSelected(null); setVSel(null); setAnswer(null); setShowAll(false); setQuery(""); };
+  // combine the selected tags into one node set. AND = intersection, OR = union.
+  // Each tag contributes its full chain set (pillarSet / verticalSet); intersecting
+  // a vertical with a focus area yields exactly that focus area's solutions for that
+  // vertical (plus the pains they share). Single tag == today's behavior.
+  const combineLayers = (verts, pillars, mode) => {
+    const sets = [...pillars.map((id) => pillarSet(id)), ...verts.map((id) => verticalSet(id))];
+    if (!sets.length) return null;
+    let out;
+    if (mode === "or") { out = new Set(); sets.forEach((s) => s.forEach((id) => out.add(id))); }
+    else { out = new Set(sets[0]); for (let i = 1; i < sets.length; i++) { const s = sets[i]; out = new Set([...out].filter((id) => s.has(id))); } }
+    out.add("core");
+    return out.size > 1 ? out : null;
+  };
+  const applyLayers = (verts, pillars, mode) => {
+    setFVerts(verts); setFPillars(pillars); setFMode(mode);
+    layersRef.current = { verts, pillars, mode };
+    setActive(combineLayers(verts, pillars, mode)); setAnswer(null);
+    // a single tag mirrors the old filterPillar/filterVertical (detail card + aura);
+    // two or more tags is a layered view with no single subject.
+    if (pillars.length === 1 && verts.length === 0) { setSelected(pillars[0]); setVSel(null); }
+    else if (verts.length === 1 && pillars.length === 0) { setSelected(null); setVSel(verts[0]); }
+    else { setSelected(null); setVSel(null); }
+  };
+  const togglePillarFilter = (pid) => applyLayers(fVerts, fPillars.includes(pid) ? fPillars.filter((x) => x !== pid) : [...fPillars, pid], fMode);
+  const toggleVertFilter = (vid) => applyLayers(fVerts.includes(vid) ? fVerts.filter((x) => x !== vid) : [...fVerts, vid], fPillars, fMode);
+  const pickVertical = (vid) => applyLayers([vid], [], fMode);
+  const setLayerMode = (m) => applyLayers(fVerts, fPillars, m);
+  const clearLayers = () => { setFVerts([]); setFPillars([]); layersRef.current = { verts: [], pillars: [], mode: fMode }; };
+  const layerLabel = () => [...fPillars.map((id) => (PILLARS.find((p) => p.id === id) || {}).label), ...fVerts.map((id) => (VERTICALS.find((v) => v.id === id) || {}).label)].filter(Boolean).join(fMode === "or" ? " or " : " + ");
+  const reset = () => { clearLayers(); setActive(null); setSelected(null); setVSel(null); setAnswer(null); setShowAll(false); setQuery(""); };
 
   const matchPains = (q) => {
     const toks = q.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
@@ -544,7 +576,7 @@ export default function App() {
   };
   const askUniverse = useCallback(async (qRaw) => {
     const q = qRaw.trim(); if (!q) return;
-    setThinking(true); setSelected(null); setVSel(null);
+    setThinking(true); clearLayers(); setSelected(null); setVSel(null);
     // analytics over the CURRENT map (reflects any edits)
     const solPains = {}; SOLUTIONS.forEach((s) => { solPains[s.id] = PAINS.filter((p) => p.sols.includes(s.id)).map((p) => p.id); });
     const focusPains = {}; PILLARS.forEach((pl) => { focusPains[pl.id] = PAINS.filter((p) => p.sols.some((sd) => NODE_BY_ID[sd].pillar === pl.id) || p.pillar === pl.id).map((p) => p.id); });
@@ -613,7 +645,7 @@ export default function App() {
   const selColor = selNode ? (selNode.type === "solution" ? "#5fd6f2" : selNode.type === "core" ? "#ff9ec5" : selNode.type === "pillar" ? (selNode.color || COLORS.pillar) : COLORS[selNode.type]) : "#7cb2dd";
   const qPrimary = { background: "linear-gradient(135deg,#00588f,#2b9fd6)", border: "none", color: "#eaf4ff", fontWeight: 700, fontSize: 13, padding: "8px 16px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit" };
   const qGhost = { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(120,150,210,0.3)", color: "#cdd9ef", fontWeight: 600, fontSize: 13, padding: "8px 16px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit" };
-  const openQuiz = () => { setActive(null); setVSel(null); setAnswer(null); setShowAll(false); setHover(null); setSelected(null); setQuizMode(null); setGameOn(true); };
+  const openQuiz = () => { clearLayers(); setActive(null); setVSel(null); setAnswer(null); setShowAll(false); setHover(null); setSelected(null); setQuizMode(null); setGameOn(true); };
   const startQuiz = (mode) => {
     const pool = PAINS.filter((p) => p.sols.length > 0);
     if (mode === "connect") {
@@ -666,7 +698,7 @@ export default function App() {
     try { const map = {}; PAINS.forEach((p) => (map[p.id] = { sols: p.sols, verts: p.verts || [] })); localStorage.setItem("i3_pain_sol_map_v1", JSON.stringify(map)); setSaveState("Saved ✓"); }
     catch (e) { setSaveState("Save failed — export to keep"); }
   };
-  const reapply = () => { if (vSelRef.current) setActive(verticalSet(vSelRef.current)); };
+  const reapply = () => { const { verts, pillars, mode } = layersRef.current; if (verts.length || pillars.length) setActive(combineLayers(verts, pillars, mode)); else if (vSelRef.current) setActive(verticalSet(vSelRef.current)); };
   const toggleLink = (painId, solId) => {
     const p = NODE_BY_ID[painId]; if (!p) return;
     p.sols = p.sols.includes(solId) ? p.sols.filter((x) => x !== solId) : [...p.sols, solId];
@@ -701,16 +733,19 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (gameOn || editorOn) return;
-    const snap = { selected, active, vSel, answer, showAll }, h = hist.current;
+    const snap = { selected, active, vSel, answer, showAll, fVerts, fPillars, fMode }, h = hist.current;
     if (h.lock) { h.lock = false; return; }
     const t = h.stack[h.idx];
-    if (t && t.selected === snap.selected && t.active === snap.active && t.vSel === snap.vSel && t.answer === snap.answer && t.showAll === snap.showAll) return;
+    const sig = (x) => x.selected + "|" + (x.active ? x.active.size : "-") + "|" + x.vSel + "|" + !!x.answer + "|" + x.showAll + "|" + (x.fVerts || []).join(",") + "|" + (x.fPillars || []).join(",") + "|" + x.fMode;
+    if (t && sig(t) === sig(snap)) return;
     h.stack = h.stack.slice(0, h.idx + 1); h.stack.push(snap); if (h.stack.length > 60) h.stack.shift(); h.idx = h.stack.length - 1;
     setHistIdx(h.idx);
-  }, [selected, active, vSel, answer, showAll, gameOn, editorOn]);
+  }, [selected, active, vSel, answer, showAll, fVerts, fPillars, fMode, gameOn, editorOn]);
   const goHist = (d) => {
     const h = hist.current, ni = h.idx + d; if (ni < 0 || ni >= h.stack.length) return;
     h.idx = ni; h.lock = true; const s = h.stack[ni];
+    const fv = s.fVerts || [], fp = s.fPillars || [], fm = s.fMode || "and";
+    setFVerts(fv); setFPillars(fp); setFMode(fm); layersRef.current = { verts: fv, pillars: fp, mode: fm };
     setSelected(s.selected); setActive(s.active); setVSel(s.vSel); setAnswer(s.answer); setShowAll(s.showAll); setHistIdx(ni);
   };
   const selNeighbors = selected ? [...relatedSet(selected)].filter((id) => id !== selected).map((id) => NODE_BY_ID[id]).filter(Boolean) : [];
@@ -723,7 +758,7 @@ export default function App() {
     return [];
   })() : [];
   const histBack = histIdx > 0, histFwd = histIdx < hist.current.stack.length - 1;
-  const viewLabel = selected ? (NODE_BY_ID[selected] ? NODE_BY_ID[selected].label : "Item") : vSel ? ((VERTICALS.find((v) => v.id === vSel) || {}).label || "Vertical") : answer ? "Search result" : active ? "Filtered view" : "Overview";
+  const viewLabel = selected ? (NODE_BY_ID[selected] ? NODE_BY_ID[selected].label : "Item") : (fPillars.length + fVerts.length) >= 2 ? layerLabel() : vSel ? ((VERTICALS.find((v) => v.id === vSel) || {}).label || "Vertical") : answer ? "Search result" : active ? "Filtered view" : "Overview";
   const hoverNode = (hover && hover !== "core" && !active && !selected && !vSel && !answer) ? NODE_BY_ID[hover] : null;
   const hoverGroups = hoverNode ? (() => {
     const g = { pain: [], solution: [], pillar: [] };
@@ -772,14 +807,22 @@ export default function App() {
             <button onClick={randomize} style={{ background: "linear-gradient(135deg,#00588f,#2b9fd6)", border: "none", color: "#eaf4ff", fontWeight: 700, fontSize: 12.5, padding: "8px 12px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit" }}>🎲 Surprise me</button>
           </>)}
         </div>
-        <div style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "#e6b14a", fontWeight: 700 }}>Focus area</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "#e6b14a", fontWeight: 700 }}>Focus area</span>
+          {(fPillars.length + fVerts.length) >= 2 && (
+            <span style={{ display: "inline-flex", border: "1px solid rgba(120,150,210,0.35)", borderRadius: 7, overflow: "hidden" }} title="How to combine the selected tags">
+              {["and", "or"].map((m) => (<span key={m} className="chip" onClick={() => setLayerMode(m)} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", padding: "2px 8px", cursor: "pointer", color: fMode === m ? "#06101f" : "#9fb6d6", background: fMode === m ? "#7cb2dd" : "transparent" }}>{m.toUpperCase()}</span>))}
+            </span>
+          )}
+        </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
-          {PILLARS.map((p) => (<span key={p.id} className="chip" onClick={() => filterPillar(p.id)} style={{ fontSize: 11.5, padding: "5px 10px", borderRadius: 20, border: `1px solid ${selected === p.id ? (p.color || COLORS.pillar) : (p.color || COLORS.pillar) + "66"}`, background: selected === p.id ? (p.color || COLORS.pillar) + "2b" : "rgba(13,20,38,0.55)", color: selected === p.id ? "#fff" : "#aebed0", display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 8, background: p.color || COLORS.pillar, boxShadow: `0 0 6px ${p.color || COLORS.pillar}` }} />{p.label}</span>))}
+          {PILLARS.map((p) => { const on = fPillars.includes(p.id); return (<span key={p.id} className="chip" onClick={() => togglePillarFilter(p.id)} style={{ fontSize: 11.5, padding: "5px 10px", borderRadius: 20, border: `1px solid ${on ? (p.color || COLORS.pillar) : (p.color || COLORS.pillar) + "66"}`, background: on ? (p.color || COLORS.pillar) + "2b" : "rgba(13,20,38,0.55)", color: on ? "#fff" : "#aebed0", display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 8, background: p.color || COLORS.pillar, boxShadow: `0 0 6px ${p.color || COLORS.pillar}` }} />{p.label}{on ? " ✓" : ""}</span>); })}
         </div>
         <div style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "#c4b0f7", fontWeight: 700, marginTop: 4 }}>Vertical</div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
-          {VERTICALS.map((v) => (<span key={v.id} className="chip" onClick={() => filterVertical(v.id)} onMouseEnter={() => { vHoverRef.current = v.id; }} onMouseLeave={() => { if (vHoverRef.current === v.id) vHoverRef.current = null; }} style={{ fontSize: 11.5, padding: "5px 10px", borderRadius: 20, border: `1px solid ${vSel === v.id ? v.color : v.color + "66"}`, background: vSel === v.id ? v.color + "2b" : "rgba(13,20,38,0.55)", color: vSel === v.id ? "#fff" : "#cdd9ef", display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 8, background: v.color, boxShadow: `0 0 6px ${v.color}` }} />{v.label}</span>))}
+          {VERTICALS.map((v) => { const on = fVerts.includes(v.id); return (<span key={v.id} className="chip" onClick={() => toggleVertFilter(v.id)} onMouseEnter={() => { vHoverRef.current = v.id; }} onMouseLeave={() => { if (vHoverRef.current === v.id) vHoverRef.current = null; }} style={{ fontSize: 11.5, padding: "5px 10px", borderRadius: 20, border: `1px solid ${on ? v.color : v.color + "66"}`, background: on ? v.color + "2b" : "rgba(13,20,38,0.55)", color: on ? "#fff" : "#cdd9ef", display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 8, background: v.color, boxShadow: `0 0 6px ${v.color}` }} />{v.label}{on ? " ✓" : ""}</span>); })}
         </div>
+        {(fPillars.length + fVerts.length) >= 2 && (<div style={{ fontSize: 10.5, color: "#9fb6d6", marginTop: 2, lineHeight: 1.4 }}>{fMode === "and" ? "Showing where " : "Showing "}{layerLabel()}{fMode === "and" ? " overlap." : " (any)."}</div>)}
       </div>)}
 
       <div ref={wrapRef} style={{ position: "absolute", inset: 0 }}>
@@ -848,7 +891,7 @@ export default function App() {
           {selNode.type === "pain" && selNode.verts && selNode.verts.length > 0 && (
             <div style={{ marginTop: 11 }}>
               <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b7a99", marginBottom: 5 }}>Verticals</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{selNode.verts.map((vid) => { const vv = VERTICALS.find((x) => x.id === vid); return vv ? (<span key={vid} className="chip" onClick={() => filterVertical(vid)} style={{ fontSize: 11, padding: "4px 9px", borderRadius: 8, background: vv.color + "22", border: `1px solid ${vv.color}88`, color: "#eaf2ff", display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 7, background: vv.color }} />{vv.label}</span>) : null; })}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{selNode.verts.map((vid) => { const vv = VERTICALS.find((x) => x.id === vid); return vv ? (<span key={vid} className="chip" onClick={() => pickVertical(vid)} style={{ fontSize: 11, padding: "4px 9px", borderRadius: 8, background: vv.color + "22", border: `1px solid ${vv.color}88`, color: "#eaf2ff", display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 7, background: vv.color }} />{vv.label}</span>) : null; })}</div>
             </div>
           )}
           {(hidden > 0 || cardExpanded) && <div onClick={() => setCardExpanded((v) => !v)} style={{ marginTop: 12, fontSize: 11.5, color: "#9fb6d6", cursor: "pointer", fontWeight: 600 }}>{cardExpanded ? "Show less ↑" : `Show all (+${hidden}) ↓`}</div>}
@@ -1022,7 +1065,7 @@ export default function App() {
                 <button onClick={exportMap} style={ebtn}>⧉ Copy changes</button>
                 <label style={{ ...ebtn, display: "inline-block" }}>⬆ Import<input type="file" accept="application/json,.json" onChange={(e) => { if (e.target.files[0]) importMap(e.target.files[0]); e.target.value = ""; }} style={{ display: "none" }} /></label>
                 <button onClick={revertMap} style={ebtn}>↺ Revert to inferred</button>
-                <button onClick={() => { setEditorOn(false); if (editPain) { setActive(null); setVSel(null); setAnswer(null); setSelected(editPain); } }} style={{ ...ebtn, background: "linear-gradient(135deg,#00588f,#2b9fd6)", border: "none", color: "#eaf4ff", fontWeight: 700 }}>Done</button>
+                <button onClick={() => { setEditorOn(false); if (editPain) { clearLayers(); setActive(null); setVSel(null); setAnswer(null); setSelected(editPain); } }} style={{ ...ebtn, background: "linear-gradient(135deg,#00588f,#2b9fd6)", border: "none", color: "#eaf4ff", fontWeight: 700 }}>Done</button>
               </div>
             </div>
             <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
