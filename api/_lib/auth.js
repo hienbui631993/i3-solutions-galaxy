@@ -65,9 +65,18 @@ export function sessionCookie(value, maxAgeSec) {
   return [`i3_session=${value}`, "Path=/", "HttpOnly", "SameSite=Strict", "Secure", `Max-Age=${maxAgeSec}`].join("; ");
 }
 
+// Today's date as YYYYMMDD — the daily-rotating password. Timezone defaults to
+// UTC; override with AUTH_DATE_TZ (an IANA name, e.g. "America/Toronto").
+export function dateCode(date = new Date(), tz = process.env.AUTH_DATE_TZ || "UTC") {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const get = (t) => parts.find((p) => p.type === t)?.value || "";
+  return `${get("year")}${get("month")}${get("day")}`;
+}
+
 export const SECRETS = {
   session: () => process.env.AUTH_SESSION_SECRET || "dev-insecure-change-me",
-  password: () => process.env.AUTH_APP_PASSWORD || "",
+  // Optional fixed override password; when unset, only the daily date works.
+  override: () => process.env.AUTH_APP_PASSWORD || "",
 };
 
 export const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour

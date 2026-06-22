@@ -3,7 +3,7 @@
 The whole app is gated behind a sign-in:
 
 1. **Email** — must be on the allowlist in [`api/_lib/allowed-users.json`](api/_lib/allowed-users.json).
-2. **Password** — a single shared `AUTH_APP_PASSWORD`.
+2. **Password** — **today's date as `YYYYMMDD`** (e.g. `20260622`), which rotates daily. Timezone for "today" defaults to UTC; set `AUTH_DATE_TZ` (e.g. `America/Toronto`) to change it. An optional fixed `AUTH_APP_PASSWORD` is also accepted as an admin override.
 
 On success the server sets a **1-hour** HttpOnly session cookie; after it expires you sign in again.
 
@@ -23,8 +23,9 @@ No database required — the session is a stateless HMAC-signed token.
 
 1. **Import this repo into Vercel** at https://vercel.com/new → select `i3-solutions-galaxy`. Vercel auto-detects Vite (build `npm run build`, output `dist`) and runs the `/api` functions.
 2. In the Vercel project, add **Environment Variables** (Settings → Environment Variables):
-   - `AUTH_APP_PASSWORD` — the shared password
    - `AUTH_SESSION_SECRET` — random 32-byte hex (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+   - *(optional)* `AUTH_DATE_TZ` — IANA timezone for the daily date password (default UTC)
+   - *(optional)* `AUTH_APP_PASSWORD` — fixed admin-override password
    - *(optional)* `ANTHROPIC_API_KEY` — only if you also add an `api/ask.js` for the "Ask the universe" feature.
 3. **Deploy.** Every push to this branch redeploys automatically.
 
@@ -44,11 +45,12 @@ Edit [`api/_lib/allowed-users.json`](api/_lib/allowed-users.json) — a JSON arr
 The `/api/*` functions run as Vite dev middleware, so the full sign-in works with plain `npm run dev`. Create a `.env` in the project root:
 
 ```
-AUTH_APP_PASSWORD=demo1234
 AUTH_SESSION_SECRET=any-long-random-string
+# optional override; otherwise the password is today's date (YYYYMMDD)
+# AUTH_APP_PASSWORD=demo1234
 ```
 
-Then `npm run dev` and sign in with an allowlisted email + that password.
+Then `npm run dev` and sign in with an allowlisted email and today's date as the password (e.g. `20260622`).
 
 To skip the gate entirely while working on the UI, set `VITE_DISABLE_AUTH=true` in `.env`. Never set this in production.
 
