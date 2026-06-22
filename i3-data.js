@@ -290,10 +290,63 @@ export function colX(type, W) {
 }
 export function buildStage(ids) {
   const map = {};
-  ["pain", "solution", "pillar", "core"].forEach((type) => {
-    const list = ids.filter((id) => NODE_BY_ID[id].type === type);
-    list.forEach((id, k) => (map[id] = { fx: STAGE_X[type], slot: k, count: list.length, type }));
+  const visIds = new Set(ids);
+  const pillarOrder = { P1: 0, P2: 1, P3: 2 };
+  const domPillar = (p) => {
+    if (!p.sols.length) return p.pillar || "P1";
+    const cnt = {}; p.sols.forEach((sid) => { const pl = NODE_BY_ID[sid]?.pillar; if (pl) cnt[pl] = (cnt[pl] || 0) + 1; });
+    return Object.entries(cnt).sort((x, y) => y[1] - x[1])[0]?.[0] || p.pillar || "P1";
+  };
+
+  // seed: group pains by dominant pillar, then by first shared solution
+  let pains = ids.filter((id) => NODE_BY_ID[id].type === "pain");
+  pains = pains.slice().sort((a, b) => {
+    const pa = NODE_BY_ID[a], pb = NODE_BY_ID[b];
+    const da = domPillar(pa), db = domPillar(pb);
+    const od = (pillarOrder[da] ?? 9) - (pillarOrder[db] ?? 9);
+    if (od !== 0) return od;
+    const primA = pa.sols.filter((s) => visIds.has(s)).sort()[0] || "zzz";
+    const primB = pb.sols.filter((s) => visIds.has(s)).sort()[0] || "zzz";
+    return primA !== primB ? primA.localeCompare(primB) : pa.label.localeCompare(pb.label);
   });
+
+  let sols = ids.filter((id) => NODE_BY_ID[id].type === "solution");
+  let pillars = ids.filter((id) => NODE_BY_ID[id].type === "pillar");
+
+  // barycentric crossing-minimisation: 4 sweeps
+  for (let pass = 0; pass < 4; pass++) {
+    // solutions → weighted mean of pain positions
+    const painPos = Object.fromEntries(pains.map((id, k) => [id, k]));
+    sols = sols.slice().sort((a, b) => {
+      const bary = (id) => { const ps = pains.filter((pid) => NODE_BY_ID[pid].sols.filter((s) => visIds.has(s)).includes(id)); return ps.length ? ps.reduce((s, pid) => s + painPos[pid], 0) / ps.length : 999; };
+      const diff = bary(a) - bary(b);
+      return Math.abs(diff) > 0.01 ? diff : (pillarOrder[NODE_BY_ID[a]?.pillar] ?? 9) - (pillarOrder[NODE_BY_ID[b]?.pillar] ?? 9);
+    });
+    // pains → weighted mean of solution positions (keep pillar groups intact)
+    const solPos = Object.fromEntries(sols.map((id, k) => [id, k]));
+    pains = pains.slice().sort((a, b) => {
+      const pa = NODE_BY_ID[a], pb = NODE_BY_ID[b];
+      const da = domPillar(pa), db = domPillar(pb);
+      const od = (pillarOrder[da] ?? 9) - (pillarOrder[db] ?? 9);
+      if (od !== 0) return od;
+      const bary = (p) => { const ss = p.sols.filter((s) => visIds.has(s)); return ss.length ? ss.reduce((s, sid) => s + (solPos[sid] ?? 0), 0) / ss.length : 999; };
+      const diff = bary(pa) - bary(pb);
+      return Math.abs(diff) > 0.01 ? diff : pa.label.localeCompare(pb.label);
+    });
+  }
+
+  // focus areas → mean of their solution positions
+  const solPos2 = Object.fromEntries(sols.map((id, k) => [id, k]));
+  pillars = pillars.slice().sort((a, b) => {
+    const bary = (pid) => { const ss = sols.filter((sid) => NODE_BY_ID[sid].pillar === pid); return ss.length ? ss.reduce((s, sid) => s + solPos2[sid], 0) / ss.length : 999; };
+    return bary(a) - bary(b);
+  });
+
+  let lastDP = null;
+  pains.forEach((id, k) => { const dp = domPillar(NODE_BY_ID[id]); const gf = dp !== lastDP; lastDP = dp; map[id] = { fx: STAGE_X.pain, slot: k, count: pains.length, type: "pain", domPillar: dp, groupFirst: gf }; });
+  sols.forEach((id, k) => (map[id] = { fx: STAGE_X.solution, slot: k, count: sols.length, type: "solution" }));
+  pillars.forEach((id, k) => (map[id] = { fx: STAGE_X.pillar, slot: k, count: pillars.length, type: "pillar" }));
+  ids.filter((id) => NODE_BY_ID[id].type === "core").forEach((id) => (map[id] = { fx: STAGE_X.core, slot: 0, count: 1, type: "core" }));
   return map;
 }
 

@@ -101,6 +101,8 @@ export default function App() {
     return () => cancelAnimationFrame(id);
   }, [editorOn]);
   const [editSearch, setEditSearch] = useState("");
+  const [editSort, setEditSort] = useState("focus"); // "az" | "focus" | "vertical" | "count" | "unmapped"
+  const [editVFilt, setEditVFilt] = useState(null);
   const [editVer, setEditVer] = useState(0);
   const [saveState, setSaveState] = useState("");
   const [exportText, setExportText] = useState(null);
@@ -314,16 +316,66 @@ export default function App() {
         ctx.globalAlpha = 1;
       }
 
+      // focus-area group bands behind the pain column in column view
+      if (stage && colLayout) {
+        const PILLAR_COLORS = { P1: "#4a9eff", P2: "#f59e0b", P3: "#22c55e" };
+        const PILLAR_LABELS = { P1: "Safety & Security", P2: "Operational Insights", P3: "Asset Protection" };
+        const ci = colLayout.info["pain"]; if (ci) {
+          const rps = ci.rowsPerSub, gap = Math.min((availH - 36) / Math.max(rps, 1), 60);
+          const groups = {};
+          NODES.forEach((n) => {
+            if (n.type !== TYPE.PAIN) return;
+            const st = stage[n.id]; if (!st) return;
+            const o = proj[IDX[n.id]]; if (!o) return;
+            const dom = st.domPillar || "P1";
+            const sub = Math.floor(st.slot / rps), bx = ci.baseX + sub * colLayout.SUBW - 14;
+            if (!groups[dom]) groups[dom] = { minY: o.y, maxY: o.y, x: bx };
+            else { if (o.y < groups[dom].minY) groups[dom].minY = o.y; if (o.y > groups[dom].maxY) groups[dom].maxY = o.y; }
+          });
+          const pad = gap * 0.5, bw = colLayout.SUBW * ci.subCols + 20;
+          Object.entries(groups).forEach(([dom, g]) => {
+            const pc = PILLAR_COLORS[dom] || "#aaa";
+            ctx.save();
+            // background band
+            ctx.globalAlpha = 0.09; ctx.fillStyle = pc;
+            ctx.fillRect(g.x, g.minY - pad, bw, g.maxY - g.minY + pad * 2);
+            // left accent bar
+            ctx.globalAlpha = 0.5; ctx.fillStyle = pc;
+            ctx.fillRect(g.x, g.minY - pad, 3, g.maxY - g.minY + pad * 2);
+            // group label
+            ctx.font = "700 9.5px 'Hanken Grotesk', system-ui, sans-serif";
+            ctx.textAlign = "left"; ctx.globalAlpha = 0.75; ctx.fillStyle = pc;
+            ctx.fillText((PILLAR_LABELS[dom] || dom).toUpperCase(), g.x + 8, g.minY - pad - 5);
+            // bottom separator line
+            ctx.globalAlpha = 0.2; ctx.strokeStyle = pc; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(g.x, g.maxY + pad); ctx.lineTo(g.x + bw, g.maxY + pad); ctx.stroke();
+            ctx.restore();
+          });
+        }
+      }
+
       // edges
       const coreIdx = IDX["core"], corePos = proj[coreIdx];
+      const bez = (ctx, ax, ay, bx, by) => { ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); };
       if (hi) {
         for (const e of EDGES) {
           if (!(hi.has(e.a) && hi.has(e.b))) continue;
           const ia = IDX[e.a], ib = IDX[e.b], v = Math.min(vis[ia], vis[ib]);
           if (v < 0.05) continue;
           const pa = proj[ia], pb = proj[ib];
-          ctx.globalAlpha = v * 0.6; ctx.strokeStyle = "#7fc0ff"; ctx.lineWidth = 1.4;
-          ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+          const isSelected = sel.current === e.a || sel.current === e.b;
+          const isHovered = hov.current === e.a || hov.current === e.b;
+          // colour each edge by the focus area (pillar) it belongs to
+          const sid = e.kind === "addr" ? e.b : e.kind === "arm" ? e.a : null;
+          const plId = sid ? NODE_BY_ID[sid]?.pillar : (e.kind === "core" ? e.b : null);
+          const pl = plId ? PILLARS.find((p) => p.id === plId) : null;
+          const ec = pl ? pl.color : "#7fc0ff";
+          // in column mode: dim resting lines heavily, only brighten on select/hover
+          const inCol = !!(stage && stage[e.a] && stage[e.b]);
+          ctx.globalAlpha = v * (isSelected ? 0.9 : isHovered ? 0.65 : inCol ? 0.08 : 0.55);
+          ctx.strokeStyle = ec;
+          ctx.lineWidth = isSelected ? 2.2 : isHovered ? 1.6 : 0.8;
+          bez(ctx, pa.x, pa.y, pb.x, pb.y);
         }
       } else {
         if (showAllRef.current) {
@@ -1052,7 +1104,34 @@ export default function App() {
 
       {editorOn && (() => {
         const ep = editPain ? NODE_BY_ID[editPain] : null;
-        const list = PAINS.filter((p) => !editSearch || p.label.toLowerCase().includes(editSearch.toLowerCase()));
+        const pillarOrder = { P1: 0, P2: 1, P3: 2 };
+        const domPillarOf = (p) => { if (!p.sols.length) return p.pillar || "P1"; const cnt = {}; p.sols.forEach((sid) => { const pl = NODE_BY_ID[sid]?.pillar; if (pl) cnt[pl] = (cnt[pl] || 0) + 1; }); return Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0] || p.pillar || "P1"; };
+        let list = PAINS.filter((p) => {
+          if (editSearch && !p.label.toLowerCase().includes(editSearch.toLowerCase())) return false;
+          if (editVFilt && !(p.verts || []).includes(editVFilt)) return false;
+          if (editSort === "unmapped" && p.sols.length > 0) return false;
+          return true;
+        });
+        // sort
+        if (editSort === "az") list = list.slice().sort((a, b) => a.label.localeCompare(b.label));
+        else if (editSort === "focus") list = list.slice().sort((a, b) => { const d = (pillarOrder[domPillarOf(a)] ?? 9) - (pillarOrder[domPillarOf(b)] ?? 9); return d !== 0 ? d : a.label.localeCompare(b.label); });
+        else if (editSort === "count") list = list.slice().sort((a, b) => b.sols.length - a.sols.length || a.label.localeCompare(b.label));
+        else if (editSort === "vertical") list = list.slice().sort((a, b) => { const va = (a.verts || [])[0] || "zzz", vb = (b.verts || [])[0] || "zzz"; return va.localeCompare(vb) || a.label.localeCompare(b.label); });
+        // grouping key for display
+        const groupKey = (p) => {
+          if (!p) return null;
+          if (editSort === "focus") { const pl = PILLARS.find((x) => x.id === domPillarOf(p)); return { key: domPillarOf(p), label: pl?.label || "Unknown", color: pl?.color || "#aaa" }; }
+          if (editSort === "vertical") { const vid = (p.verts || [])[0]; const vv = vid ? VERTICALS.find((v) => v.id === vid) : null; return { key: vid || "none", label: vv?.label || "No vertical", color: vv?.color || "#6b7a99" }; }
+          if (editSort === "count") { const n = p.sols.length; const k = n === 0 ? "0" : n <= 3 ? "1-3" : n <= 7 ? "4-7" : "8+"; return { key: k, label: k === "0" ? "Unmapped" : `${k} solutions`, color: n === 0 ? "#ff8a93" : n <= 3 ? "#f59e0b" : n <= 7 ? "#5fd6f2" : "#22c55e" }; }
+          return null;
+        };
+        const SORT_OPTS = [
+          { id: "focus", label: "By theme" },
+          { id: "vertical", label: "By vertical" },
+          { id: "az", label: "A – Z" },
+          { id: "count", label: "By coverage" },
+          { id: "unmapped", label: "Unmapped only" },
+        ];
         const ebtn = { background: "rgba(13,20,38,0.8)", border: "1px solid rgba(124,178,221,0.35)", color: "#cfe0f6", fontWeight: 600, fontSize: 12, padding: "7px 12px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" };
         return (
           <div style={{ position: "absolute", inset: 0, zIndex: 20, background: "rgba(6,11,22,0.97)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", color: "#e6f1ff" }}>
@@ -1069,20 +1148,40 @@ export default function App() {
               </div>
             </div>
             <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-              <div style={{ width: 310, borderRight: "1px solid rgba(120,150,210,0.18)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-                <div style={{ padding: "10px 12px" }}>
+              <div style={{ width: 320, borderRight: "1px solid rgba(120,150,210,0.18)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ padding: "10px 12px 8px", display: "flex", flexDirection: "column", gap: 7 }}>
                   <input value={editSearch} onChange={(e) => setEditSearch(e.target.value)} placeholder="Search pain points…" style={{ width: "100%", boxSizing: "border-box", background: "rgba(13,20,38,0.8)", border: "1px solid rgba(120,150,210,0.3)", borderRadius: 8, color: "#eaf1ff", fontSize: 12.5, padding: "8px 10px", outline: "none", fontFamily: "inherit" }} />
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {SORT_OPTS.map((o) => (<span key={o.id} onClick={() => setEditSort(o.id)} style={{ fontSize: 11, padding: "3px 9px", borderRadius: 14, cursor: "pointer", border: `1px solid ${editSort === o.id ? "#5fd6f2" : "rgba(120,150,210,0.25)"}`, background: editSort === o.id ? "rgba(95,214,242,0.15)" : "rgba(13,20,38,0.6)", color: editSort === o.id ? "#5fd6f2" : "#8fa3c2", fontWeight: editSort === o.id ? 700 : 400 }}>{o.label}</span>))}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {VERTICALS.map((v) => (<span key={v.id} onClick={() => setEditVFilt(editVFilt === v.id ? null : v.id)} title={v.label} style={{ width: 14, height: 14, borderRadius: 14, background: v.color, opacity: editVFilt && editVFilt !== v.id ? 0.3 : 1, cursor: "pointer", border: editVFilt === v.id ? `2px solid #fff` : "2px solid transparent", boxSizing: "border-box" }} />))}
+                    {editVFilt && <span onClick={() => setEditVFilt(null)} style={{ fontSize: 10, color: "#8fa3c2", cursor: "pointer", alignSelf: "center", marginLeft: 4 }}>✕ clear</span>}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: "#5a6a88" }}>{list.length} pain point{list.length !== 1 ? "s" : ""}</div>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 12px" }}>
-                  {list.map((p) => { const sel = editPain === p.id, n = p.sols.length; return (
-                    <div key={p.id} ref={sel ? editSelRef : null} onClick={() => setEditPain(p.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, cursor: "pointer", background: sel ? "rgba(255,93,108,0.16)" : "transparent", border: sel ? "1px solid rgba(255,93,108,0.5)" : "1px solid transparent", marginBottom: 3 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, color: sel ? "#ffd5d8" : "#cdd9ef", lineHeight: 1.3 }}>{p.label}</div>
-                        {(p.verts || []).length > 0 && <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>{(p.verts || []).map((vid) => { const vv = VERTICALS.find((v) => v.id === vid); return vv ? (<span key={vid} style={{ width: 7, height: 7, borderRadius: 7, background: vv.color, display: "inline-block" }} title={vv.label} />) : null; })}</div>}
+                  {(() => {
+                    const row = (p) => { const sel = editPain === p.id, n = p.sols.length; return (
+                      <div key={p.id} ref={sel ? editSelRef : null} onClick={() => setEditPain(p.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, cursor: "pointer", background: sel ? "rgba(255,93,108,0.16)" : "transparent", border: sel ? "1px solid rgba(255,93,108,0.5)" : "1px solid transparent", marginBottom: 2 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: sel ? "#ffd5d8" : "#cdd9ef", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.label}</div>
+                          {(p.verts || []).length > 0 && <div style={{ display: "flex", gap: 3, marginTop: 3 }}>{(p.verts || []).map((vid) => { const vv = VERTICALS.find((v) => v.id === vid); return vv ? <span key={vid} style={{ width: 6, height: 6, borderRadius: 6, background: vv.color }} title={vv.label} /> : null; })}</div>}
+                        </div>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: n ? "#7fc0a0" : "#ff8a93", flex: "0 0 auto" }}>{n}</span>
                       </div>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: n ? "#7fc0a0" : "#ff8a93", flex: "0 0 auto" }}>{n}</span>
-                    </div>
-                  ); })}
+                    ); };
+                    if (!list.length) return <div style={{ color: "#5a6a88", fontSize: 12, padding: "12px 10px" }}>No pain points match.</div>;
+                    if (!groupKey(list[0])) return list.map(row);
+                    const groups = []; let lastK = null;
+                    list.forEach((p) => { const gk = groupKey(p); if (gk.key !== lastK) { groups.push({ ...gk, items: [] }); lastK = gk.key; } groups[groups.length - 1].items.push(p); });
+                    return groups.map((g) => (
+                      <div key={g.key} style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: g.color, padding: "6px 10px 4px", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 7, height: 7, borderRadius: 7, background: g.color }} />{g.label}<span style={{ marginLeft: "auto", color: "#5a6a88", fontWeight: 400 }}>{g.items.length}</span></div>
+                        {g.items.map(row)}
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: "16px 22px", minHeight: 0 }}>
