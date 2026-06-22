@@ -54,8 +54,6 @@ function anthropicProxy(env) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
-    // Served from a project GitHub Pages URL (/<repo>/) in production; root in dev.
-    base: mode === "production" ? "/i3-solutions-galaxy/" : "/",
     plugins: [react(), anthropicProxy(env)],
     server: { port: 5173 },
   };
