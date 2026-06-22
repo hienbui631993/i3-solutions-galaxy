@@ -108,10 +108,16 @@ export async function sendCodeEmail(toEmail, code) {
         text: `Your one-time sign-in code is ${code}. It expires in 10 minutes.\n\nIf you did not request this, you can ignore this email.`,
       }),
     });
-    return { ok: res.ok };
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      console.log(`[auth] code emailed to ${toEmail} via Resend (id: ${data.id || "unknown"})`);
+      return { ok: true, id: data.id };
+    }
+    console.error(`[auth] Resend rejected the email to ${toEmail} (HTTP ${res.status}):`, JSON.stringify(data));
+    return { ok: false, error: data };
   } catch (e) {
     console.error("[auth] email send failed:", e);
-    return { ok: false };
+    return { ok: false, error: String(e) };
   }
 }
 
