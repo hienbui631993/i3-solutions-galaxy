@@ -828,7 +828,7 @@ export default function App() {
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "16px 22px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", zIndex: 5, pointerEvents: "none" }}>
         <div style={{ pointerEvents: "auto" }}>
           <div className="ttl" style={{ fontSize: 19, fontWeight: 700, color: "#fff" }}>i3 Solution Galaxy</div>
-          <div style={{ fontSize: 12.5, color: "#8595b3", marginTop: 2 }}>i3Ai at the core — focus areas, solutions and the pain points they solve orbit outward.</div>
+          <div style={{ fontSize: 12.5, color: "#8595b3", marginTop: 2 }}>i3Ai at the core - focus areas, solutions and the pain points they solve orbit outward.</div>
         </div>
         <div style={{ pointerEvents: "auto", display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(13,20,38,0.6)", border: "1px solid rgba(120,150,210,0.18)", padding: "8px 12px", borderRadius: 10, backdropFilter: "blur(8px)", fontSize: 11.5 }}>
