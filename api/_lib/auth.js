@@ -20,8 +20,15 @@ export function allowedEmails() {
   }
 }
 
-// The user signs in with the local part of their email (everything before @).
-// Return the full allowlisted email whose local part matches, or null.
+// Return the canonical allowlisted email matching the supplied email
+// (case-insensitive exact match), or null if it is not on the list.
+export function allowedEmail(email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e) return null;
+  return allowedEmails().find((a) => String(a).trim().toLowerCase() === e) || null;
+}
+
+// Legacy: match by the local part (everything before @). Kept for compatibility.
 export function emailForUsername(username) {
   const u = String(username || "").trim().toLowerCase();
   if (!u) return null;

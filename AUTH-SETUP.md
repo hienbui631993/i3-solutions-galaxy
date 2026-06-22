@@ -2,8 +2,8 @@
 
 The whole app is gated behind two factors:
 
-1. **Username + password** — username is the part of your email *before* the `@`; the password is a single shared `AUTH_APP_PASSWORD`.
-2. **A 6-digit one-time code** emailed to your allowlisted address.
+1. **Email + password** — your full email (must be on the allowlist); the password is a single shared `AUTH_APP_PASSWORD`.
+2. **A 6-digit one-time code** emailed to that address.
 
 On success the server sets a **1-hour** HttpOnly session cookie; after it expires you sign in again.
 
@@ -13,7 +13,7 @@ Only emails listed in [`api/_lib/allowed-users.json`](api/_lib/allowed-users.jso
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /api/request-code` | Looks up the username in the allowlist, generates a code, emails it, returns a signed (opaque) challenge. Returns the same shape for unknown users so accounts can't be enumerated. |
+| `POST /api/request-code` | Looks up the email in the allowlist, generates a code, emails it, returns a signed (opaque) challenge. Returns the same shape for unknown emails so accounts can't be enumerated. |
 | `POST /api/verify` | Checks the password + the code against the challenge, then sets the 1-hour session cookie. |
 | `GET /api/session` | Tells the client whether the cookie is still valid. |
 | `POST /api/logout` | Clears the cookie. |
@@ -35,7 +35,7 @@ The one-time code is never stored on a server or committed to a file — it live
 
 ## Managing who can sign in
 
-Edit [`api/_lib/allowed-users.json`](api/_lib/allowed-users.json) — a JSON array of full emails — and push. Local parts (before the `@`) should be unique.
+Edit [`api/_lib/allowed-users.json`](api/_lib/allowed-users.json) — a JSON array of full emails — and push. Users sign in with their full email.
 
 ```json
 [

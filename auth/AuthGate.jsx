@@ -19,7 +19,7 @@ const btn = { width: "100%", background: "linear-gradient(135deg,#00588f,#2b9fd6
 export default function AuthGate({ children }) {
   const bypass = import.meta.env.VITE_DISABLE_AUTH === "true";
   const [stage, setStage] = useState(bypass ? "in" : "loading"); // loading | login | code | in
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [challenge, setChallenge] = useState("");
   const [code, setCode] = useState("");
@@ -37,13 +37,13 @@ export default function AuthGate({ children }) {
   const sendCode = async (e) => {
     e.preventDefault();
     setErr("");
-    if (!username.trim() || !password) { setErr("Enter your username and password."); return; }
+    if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
     try {
       const r = await fetch("/api/request-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.trim() }),
+        body: JSON.stringify({ email: email.trim() }),
       });
       const d = await r.json();
       if (d && d.challenge) { setChallenge(d.challenge); setCode(""); setStage("code"); }
@@ -81,8 +81,8 @@ export default function AuthGate({ children }) {
 
         {stage === "login" ? (
           <>
-            <label style={label}>Username <span style={{ textTransform: "none", letterSpacing: 0, color: "#5d6b87" }}>(your email before the @)</span></label>
-            <input style={input} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. marketing" autoFocus autoComplete="username" />
+            <label style={label}>Email</label>
+            <input style={input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@i3international.com" autoFocus autoComplete="email" />
             <label style={label}>Password</label>
             <input style={input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
           </>
