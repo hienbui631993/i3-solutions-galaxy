@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
-// Shared auth helpers for the serverless functions. No external dependencies:
-// HMAC challenge tokens + HS256 session JWTs are built with node:crypto.
+// Shared auth helpers. Gate = allowlisted email + shared password, with a
+// signed 1-hour session. Email/OTP delivery has been dropped for now.
+// No external dependencies: HS256 session tokens are built with node:crypto.
 // ---------------------------------------------------------------------------
 
 const b64url = (buf) => Buffer.from(buf).toString("base64url");
@@ -26,30 +27,6 @@ export function allowedEmail(email) {
   const e = String(email || "").trim().toLowerCase();
   if (!e) return null;
   return allowedEmails().find((a) => String(a).trim().toLowerCase() === e) || null;
-}
-
-// Legacy: match by the local part (everything before @). Kept for compatibility.
-export function emailForUsername(username) {
-  const u = String(username || "").trim().toLowerCase();
-  if (!u) return null;
-  return allowedEmails().find((e) => String(e).split("@")[0].toLowerCase() === u) || null;
-}
-
-// ---- stateless OTP challenge ----------------------------------------------
-// token = base64url(JSON{email,code,exp}) + "." + HMAC. The code is never
-// exposed in plaintext to the client; it is only delivered by email.
-export function makeChallenge(email, code, ttlMs, secret) {
-  const payload = b64url(JSON.stringify({ email, code, exp: Date.now() + ttlMs }));
-  return `${payload}.${hmac(payload, secret)}`;
-}
-export function readChallenge(token, secret) {
-  if (typeof token !== "string" || !token.includes(".")) return null;
-  const [payload, sig] = token.split(".");
-  if (hmac(payload, secret) !== sig) return null;
-  let data;
-  try { data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")); } catch { return null; }
-  if (!data || Date.now() > data.exp) return null;
-  return data;
 }
 
 // ---- session JWT (HS256) ---------------------------------------------------
@@ -88,44 +65,9 @@ export function sessionCookie(value, maxAgeSec) {
   return [`i3_session=${value}`, "Path=/", "HttpOnly", "SameSite=Strict", "Secure", `Max-Age=${maxAgeSec}`].join("; ");
 }
 
-// ---- email delivery (Resend HTTP API, no SDK) -----------------------------
-export async function sendCodeEmail(toEmail, code) {
-  const key = process.env.RESEND_API_KEY;
-  const from = process.env.AUTH_EMAIL_FROM || "i3 Solution Galaxy <onboarding@resend.dev>";
-  if (!key) {
-    // No provider configured — log so it still works during local/dev testing.
-    console.warn(`[auth] RESEND_API_KEY not set. One-time code for ${toEmail}: ${code}`);
-    return { ok: false, dev: true };
-  }
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [toEmail],
-        subject: "Your i3 Solution Galaxy sign-in code",
-        text: `Your one-time sign-in code is ${code}. It expires in 10 minutes.\n\nIf you did not request this, you can ignore this email.`,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      console.log(`[auth] code emailed to ${toEmail} via Resend (id: ${data.id || "unknown"})`);
-      return { ok: true, id: data.id };
-    }
-    console.error(`[auth] Resend rejected the email to ${toEmail} (HTTP ${res.status}):`, JSON.stringify(data));
-    return { ok: false, error: data };
-  } catch (e) {
-    console.error("[auth] email send failed:", e);
-    return { ok: false, error: String(e) };
-  }
-}
-
 export const SECRETS = {
-  challenge: () => process.env.AUTH_CHALLENGE_SECRET || process.env.AUTH_SESSION_SECRET || "dev-insecure-change-me",
   session: () => process.env.AUTH_SESSION_SECRET || "dev-insecure-change-me",
   password: () => process.env.AUTH_APP_PASSWORD || "",
 };
 
 export const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
-export const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes

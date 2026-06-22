@@ -59,8 +59,7 @@ function anthropicProxy(env) {
  */
 function authDevApi() {
   const routes = {
-    "/api/request-code": () => import("./api/request-code.js"),
-    "/api/verify": () => import("./api/verify.js"),
+    "/api/login": () => import("./api/login.js"),
     "/api/session": () => import("./api/session.js"),
     "/api/logout": () => import("./api/logout.js"),
   };
@@ -105,7 +104,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   // Make server-side secrets from .env visible to the auth handlers (which read
   // process.env directly), so the real 2FA flow works under `npm run dev`.
-  ["AUTH_APP_PASSWORD", "AUTH_SESSION_SECRET", "AUTH_CHALLENGE_SECRET", "RESEND_API_KEY", "AUTH_EMAIL_FROM"].forEach((k) => {
+  ["AUTH_APP_PASSWORD", "AUTH_SESSION_SECRET"].forEach((k) => {
     if (env[k] && !process.env[k]) process.env[k] = env[k];
   });
   return {
