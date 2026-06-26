@@ -318,8 +318,8 @@ export default function App() {
 
       // focus-area group bands behind the pain column in column view
       if (stage && colLayout) {
-        const PILLAR_COLORS = { P1: "#4a9eff", P2: "#f59e0b", P3: "#22c55e" };
-        const PILLAR_LABELS = { P1: "Safety & Security", P2: "Operational Insights", P3: "Asset Protection" };
+        const PILLAR_COLORS = { P1: "#4a9eff", P2: "#f59e0b", P3: "#22c55e", P4: "#a855f7" };
+        const PILLAR_LABELS = { P1: "Safety & Security", P2: "Operational Insights", P3: "Asset Protection", P4: "Services" };
         const ci = colLayout.info["pain"]; if (ci) {
           const rps = ci.rowsPerSub, gap = Math.min((availH - 36) / Math.max(rps, 1), 60);
           const groups = {};
@@ -1104,7 +1104,7 @@ export default function App() {
 
       {editorOn && (() => {
         const ep = editPain ? NODE_BY_ID[editPain] : null;
-        const pillarOrder = { P1: 0, P2: 1, P3: 2 };
+        const pillarOrder = { P1: 0, P2: 1, P3: 2, P4: 3 };
         const domPillarOf = (p) => { if (!p.sols.length) return p.pillar || "P1"; const cnt = {}; p.sols.forEach((sid) => { const pl = NODE_BY_ID[sid]?.pillar; if (pl) cnt[pl] = (cnt[pl] || 0) + 1; }); return Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0] || p.pillar || "P1"; };
         let list = PAINS.filter((p) => {
           if (editSearch && !p.label.toLowerCase().includes(editSearch.toLowerCase())) return false;

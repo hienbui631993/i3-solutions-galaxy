@@ -18,6 +18,7 @@ export const PILLARS = [
   { id: "P1", label: "Safety & Security", short: "Safety & Security", color: "#4a9eff", url: "https://www.i3international.com/solutions/#safety-security", desc: "Detect risks early and protect people, assets and operations across all locations." },
   { id: "P2", label: "Operational Insights", short: "Operational Insights", color: "#f59e0b", url: "https://www.i3international.com/solutions/#Operational-insights", desc: "Automate workflows and optimize staffing with real-time performance analytics." },
   { id: "P3", label: "Asset Protection", short: "Asset Protection", color: "#22c55e", url: "https://www.i3international.com/solutions/#asset-protection", desc: "Prevent loss using AI anomaly detection and video-backed insight." },
+  { id: "P4", label: "Services", short: "Services", color: "#a855f7", url: "https://www.i3international.com/solutions/", desc: "Managed and professional services that extend the platform — monitoring, analysis and support." },
 ];
 
 export const SOLUTIONS = [
@@ -33,7 +34,8 @@ export const SOLUTIONS = [
   { id: "incident", label: "Incident Reporting", short: "Incident Reporting", pillar: "P1" },
   { id: "alert", label: "Alert Centre", short: "Alert Centre", pillar: "P1", url: "https://www.i3international.com/solutions/alert-center", desc: "Centralize and route AI alerts across sites." },
   { id: "trueview", label: "i3 True View", short: "True View", pillar: "P1", url: "https://www.i3international.com/solutions/i3-true-view/", desc: "Unified viewing experience across locations." },
-  { id: "concierge", label: "i3 Concierge Plus Service", short: "Concierge Plus", pillar: "P1" },
+  { id: "smartsensor", label: "Smart Sensor Integration", short: "Smart Sensor", pillar: "P1", desc: "Integrate IoT and environmental sensors for richer, real-time detection and alerting." },
+  { id: "concierge", label: "i3 Concierge Plus Service", short: "Concierge Plus", pillar: "P4" },
   { id: "alarms", label: "i3Ai Alarms & Search", short: "Alarms & Search", pillar: "P1", url: "https://www.i3international.com/solutions/i3ai-alarms-search/", desc: "AI-powered event detection and video search — cuts response time and surfaces critical footage in seconds across unlimited sites." },
   { id: "loitering", label: "i3Ai Loitering Detection", short: "Loitering Detection", pillar: "P1", url: "https://www.i3international.com/solutions/i3ai-loitering-detection/", desc: "AI-driven dwell-time monitoring that identifies individuals or groups lingering in designated zones — proactively alerting security before risks escalate." },
   { id: "svc_anom", label: "i3Ai Service Anomaly", short: "Service Anomaly", pillar: "P2" },
@@ -288,7 +290,7 @@ export function colX(type, W) {
 export function buildStage(ids) {
   const map = {};
   const visIds = new Set(ids);
-  const pillarOrder = { P1: 0, P2: 1, P3: 2 };
+  const pillarOrder = { P1: 0, P2: 1, P3: 2, P4: 3 };
   const domPillar = (p) => {
     if (!p.sols.length) return p.pillar || "P1";
     const cnt = {}; p.sols.forEach((sid) => { const pl = NODE_BY_ID[sid]?.pillar; if (pl) cnt[pl] = (cnt[pl] || 0) + 1; });
